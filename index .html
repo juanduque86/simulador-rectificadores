@@ -1,0 +1,857 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simulador de Rectificadores - Desafío</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Inter:wght@400;600&display=swap" rel="stylesheet">
+    <style>
+        body {
+            background-color: #0f172a; /* bg-slate-900 */
+            color: #e2e8f0; /* text-slate-200 */
+            font-family: 'Inter', sans-serif;
+            margin: 0;
+            overflow-x: hidden;
+        }
+        .tech-font {
+            font-family: 'Share Tech Mono', monospace;
+        }
+        
+        /* Estilos futuristas inspirados en la imagen */
+        .panel-container {
+            background: linear-gradient(145deg, #1e293b, #0f172a);
+            border: 1px solid #334155;
+            box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.5), 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+        
+        .accent-green { color: #4ade80; }
+        .border-green { border-color: #4ade80; }
+        .bg-green-glow { box-shadow: 0 0 10px #4ade8055; }
+        
+        .accent-blue { color: #38bdf8; }
+        
+        .accent-orange { color: #fb923c; }
+
+        canvas {
+            background-color: rgba(15, 23, 42, 0.8);
+            border-radius: 0.5rem;
+            border: 1px solid #334155;
+        }
+
+        /* Estilos para el diagrama del circuito */
+        .circuit-view {
+            position: relative;
+            width: 100%;
+            height: 300px;
+            background: radial-gradient(circle at center, #1e293b 0%, #0f172a 100%);
+            border: 1px solid #334155;
+            border-radius: 0.5rem;
+            overflow: hidden;
+        }
+
+        /* Componentes del circuito (representación simplificada) */
+        .component {
+            position: absolute;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.8rem;
+            font-weight: bold;
+            color: #fff;
+            text-shadow: 0 0 5px #000;
+        }
+        
+        .wire {
+            position: absolute;
+            background-color: #64748b;
+            box-shadow: 0 0 5px #64748b88;
+            transition: background-color 0.1s, box-shadow 0.1s;
+        }
+        
+        .wire.active-pos {
+            background-color: #fb923c; /* Naranja para positivo */
+            box-shadow: 0 0 10px #fb923c;
+        }
+        .wire.active-neg {
+            background-color: #38bdf8; /* Azul para negativo (retorno) */
+            box-shadow: 0 0 10px #38bdf8;
+        }
+
+        .diode {
+            width: 30px;
+            height: 20px;
+            /* Triángulo y línea */
+            background: 
+                linear-gradient(to right, transparent 28px, #fff 28px, #fff 30px), /* Línea cátodo */
+                polygon(0 0, 0 100%, 28px 50%); /* Triángulo ánodo - usando clip-path en vez de background para mejor soporte */
+            position: relative;
+        }
+        
+        /* Uso un pseudoelemento para el triángulo del diodo para poder darle color fácilmente */
+        .diode::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 25px;
+            height: 20px;
+            background-color: #94a3b8;
+            clip-path: polygon(0 0, 0 100%, 100% 50%);
+            transition: background-color 0.1s;
+        }
+        .diode::after {
+            content: '';
+            position: absolute;
+            right: 0;
+            top: 0;
+            width: 4px;
+            height: 20px;
+            background-color: #94a3b8;
+            transition: background-color 0.1s;
+        }
+
+        .diode.conducting::before, .diode.conducting::after {
+            background-color: #4ade80;
+            box-shadow: 0 0 10px #4ade80;
+        }
+        
+        .diode.blocking::before, .diode.blocking::after {
+            background-color: #ef4444; /* Rojo cuando bloquea */
+        }
+
+        .transformer {
+            width: 40px;
+            height: 60px;
+            border-left: 4px solid #94a3b8;
+            border-right: 4px solid #94a3b8;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .resistor {
+            width: 20px;
+            height: 50px;
+            background: repeating-linear-gradient(
+                0deg,
+                transparent,
+                transparent 5px,
+                #94a3b8 5px,
+                #94a3b8 10px
+            );
+            border-left: 2px solid #94a3b8;
+            border-right: 2px solid #94a3b8;
+        }
+
+        /* Partículas animadas para representar corriente */
+        .electron {
+            position: absolute;
+            width: 6px;
+            height: 6px;
+            background-color: #fff;
+            border-radius: 50%;
+            box-shadow: 0 0 8px #fff;
+            z-index: 10;
+        }
+        
+        /* Contenedor de animaciones */
+        #circuit-container {
+            position: relative;
+            width: 100%;
+            height: 100%;
+        }
+
+        /* Ocultar elementos según el circuito seleccionado */
+        .hw-only, .fw-only { display: none; }
+        .mode-hw .hw-only { display: block; }
+        .mode-fw .fw-only { display: block; }
+
+    </style>
+</head>
+<body class="p-4 md:p-8 flex flex-col items-center">
+
+    <header class="w-full max-w-6xl mb-8 text-center md:text-left flex flex-col md:flex-row justify-between items-end border-b border-slate-700 pb-4">
+        <div>
+            <h1 class="text-3xl md:text-4xl font-black italic tracking-wider text-white">
+                DESAFÍO DE LA UNIDAD
+            </h1>
+            <h2 class="text-2xl md:text-3xl font-bold accent-green mt-1">
+                RECTIFICADORES EN ACCIÓN
+            </h2>
+            <p class="text-slate-400 mt-2 tech-font text-sm uppercase tracking-widest">
+                Simula. Analiza. Comprende. Transforma energía.
+            </p>
+        </div>
+        <div class="mt-4 md:mt-0 flex gap-4">
+            <!-- Selector de Circuito -->
+            <div class="panel-container p-2 rounded-lg flex gap-2">
+                <button id="btn-media-onda" class="px-4 py-2 rounded font-bold text-sm transition-colors bg-green-600 text-white shadow-[0_0_10px_rgba(74,222,128,0.5)]" onclick="setCircuitMode('hw')">
+                    MEDIA ONDA
+                </button>
+                <button id="btn-onda-completa" class="px-4 py-2 rounded font-bold text-sm transition-colors text-slate-300 hover:bg-slate-700" onclick="setCircuitMode('fw')">
+                    ONDA COMPLETA
+                </button>
+            </div>
+            
+            <!-- Controles de simulación -->
+            <div class="panel-container p-2 rounded-lg flex items-center gap-4">
+                <label class="flex items-center cursor-pointer">
+                    <div class="relative">
+                        <input type="checkbox" id="power-switch" class="sr-only" checked onchange="togglePower()">
+                        <div class="block bg-slate-600 w-10 h-6 rounded-full"></div>
+                        <div id="power-dot" class="dot absolute left-1 top-1 bg-green-400 w-4 h-4 rounded-full transition transform translate-x-4 shadow-[0_0_5px_#4ade80]"></div>
+                    </div>
+                    <div class="ml-3 text-sm font-bold tech-font text-white uppercase">Power</div>
+                </label>
+                
+                <div class="flex flex-col w-32">
+                    <label for="speed-slider" class="text-xs text-slate-400">Velocidad Animación</label>
+                    <input type="range" id="speed-slider" min="0.1" max="3" step="0.1" value="1" class="w-full accent-green-500">
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <main class="w-full max-w-6xl grid grid-cols-1 lg:grid-cols-12 gap-6">
+        
+        <div class="lg:col-span-7 flex flex-col gap-6">
+            
+            <!-- Panel del Circuito Interactivo -->
+            <div class="panel-container rounded-xl p-4 flex flex-col relative overflow-hidden">
+                <div class="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-green-500 to-transparent opacity-50"></div>
+                
+                <h3 class="text-lg font-bold text-white mb-2 flex items-center">
+                    <svg class="w-5 h-5 mr-2 accent-green" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"></path></svg>
+                    DIAGRAMA DEL CIRCUITO
+                    <span id="circuit-title" class="ml-2 text-sm accent-green tech-font">MEDIA ONDA</span>
+                </h3>
+                
+                <!-- Área donde dibujaremos el circuito con divs -->
+                <div id="circuit-view" class="circuit-view mode-hw">
+                    <div id="circuit-container">
+                        <!-- Fuente AC -->
+                        <div class="component left-[10%] top-[40%] flex-col" style="width: 50px; height: 50px;">
+                            <div class="w-10 h-10 rounded-full border-2 border-slate-400 flex items-center justify-center bg-slate-800 z-10">
+                                <span class="tech-font text-lg text-slate-300">~</span>
+                            </div>
+                            <span class="mt-1 text-xs text-slate-400">AC IN</span>
+                        </div>
+                        
+                        <!-- Transformador (representación visual) -->
+                        <div class="component left-[25%] top-[35%]">
+                            <div class="transformer">
+                                <div class="w-full h-full border-y border-dashed border-slate-500 opacity-50"></div>
+                            </div>
+                        </div>
+
+                        <!-- CABLES COMUNES -->
+                        <!-- Cable Secundario Arriba -->
+                        <div class="wire top-[35%] left-[28%] h-[4px] w-[5%] bg-slate-500 rounded-l"></div>
+                        <!-- Cable Secundario Abajo -->
+                        <div class="wire top-[65%] left-[28%] h-[4px] w-[5%] bg-slate-500 rounded-l"></div>
+
+                        <!-- ========================================== -->
+                        <!-- COMPONENTES MEDIA ONDA (hw-only)         -->
+                        <!-- ========================================== -->
+                        
+                        <!-- Cable hacia diodo -->
+                        <div class="wire hw-only node-a top-[35%] left-[33%] h-[4px] w-[15%]"></div>
+                        
+                        <!-- Diodo D1 (Media Onda) -->
+                        <div class="component hw-only left-[48%] top-[32%]">
+                            <div id="d1-hw" class="diode z-10"></div>
+                            <span class="absolute -top-5 text-xs">D1</span>
+                        </div>
+                        
+                        <!-- Cable post-diodo a carga -->
+                        <div class="wire hw-only node-post-d1 top-[35%] left-[53%] h-[4px] w-[27%]"></div>
+                        <!-- Cable bajada a carga -->
+                        <div class="wire hw-only node-post-d1 top-[35%] right-[20%] w-[4px] h-[15%]"></div>
+                        
+                        <!-- Resistencia de Carga (Media Onda) -->
+                        <div class="component hw-only right-[20%] top-[50%] transform -translate-x-1/2 -translate-y-1/2">
+                            <div class="resistor z-10"></div>
+                            <span class="absolute left-6 text-xs whitespace-nowrap">RL (Carga)</span>
+                        </div>
+                        
+                        <!-- Cable retorno desde carga -->
+                        <div class="wire hw-only node-return top-[65%] right-[20%] w-[4px] h-[15%]"></div>
+                        <div class="wire hw-only node-return top-[80%] left-[33%] h-[4px] w-[47%]"></div>
+                        <div class="wire hw-only node-return top-[65%] left-[33%] w-[4px] h-[15%]"></div>
+                        <!-- Cable de secundario abajo a retorno -->
+                        <div class="wire hw-only top-[65%] left-[33%] h-[4px] w-[2%]"></div>
+
+                        <!-- ========================================== -->
+                        <!-- COMPONENTES ONDA COMPLETA (fw-only)      -->
+                        <!-- ========================================== -->
+                        
+                        <!-- Cables de entrada al puente -->
+                        <div class="wire fw-only node-ac-top top-[35%] left-[33%] h-[4px] w-[17%]"></div>
+                        <div class="wire fw-only node-ac-bot top-[65%] left-[33%] h-[4px] w-[17%]"></div>
+
+                        <!-- PUENTE DE DIODOS (Rombo) -->
+                        <div class="component fw-only left-[50%] top-[50%] w-[120px] h-[120px] transform -translate-x-1/2 -translate-y-1/2 z-10">
+                            <!-- Cables del rombo -->
+                            <!-- Arriba-Izquierda -->
+                            <div class="wire absolute top-[25%] left-[25%] w-[70%] h-[4px] transform -rotate-45 origin-left"></div>
+                            <!-- Arriba-Derecha -->
+                            <div class="wire absolute top-[25%] right-[25%] w-[70%] h-[4px] transform rotate-45 origin-right"></div>
+                            <!-- Abajo-Izquierda -->
+                            <div class="wire absolute bottom-[25%] left-[25%] w-[70%] h-[4px] transform rotate-45 origin-left"></div>
+                            <!-- Abajo-Derecha -->
+                            <div class="wire absolute bottom-[25%] right-[25%] w-[70%] h-[4px] transform -rotate-45 origin-right"></div>
+                            
+                            <!-- Nodos de conexión del puente -->
+                            <div class="absolute left-0 top-1/2 w-3 h-3 bg-slate-400 rounded-full transform -translate-y-1/2 -translate-x-1/2 z-20"></div> <!-- Entrada AC Top -->
+                            <div class="absolute right-0 top-1/2 w-3 h-3 bg-slate-400 rounded-full transform -translate-y-1/2 translate-x-1/2 z-20"></div> <!-- Salida DC + -->
+                            <div class="absolute top-0 left-1/2 w-3 h-3 bg-slate-400 rounded-full transform -translate-x-1/2 -translate-y-1/2 z-20"></div> <!-- Entrada AC Bot -->
+                            <div class="absolute bottom-0 left-1/2 w-3 h-3 bg-slate-400 rounded-full transform -translate-x-1/2 translate-y-1/2 z-20"></div> <!-- Salida DC - -->
+
+                            <!-- Diodos del Puente (posicionados sobre los cables del rombo) -->
+                            <!-- D1 (Arriba-Der) Apunta a Salida + -->
+                            <div class="absolute top-[25%] right-[25%] transform translate-x-1/2 -translate-y-1/2 rotate-45 z-30">
+                                <div id="d1-fw" class="diode scale-75"></div>
+                                <span class="absolute -top-4 -right-4 text-[10px]">D1</span>
+                            </div>
+                            <!-- D2 (Abajo-Izq) Apunta a Salida - (pero invertido visualmente en el circuito real, fluye de Salida - a AC) -->
+                            <div class="absolute bottom-[25%] left-[25%] transform -translate-x-1/2 translate-y-1/2 rotate-45 z-30">
+                                <div id="d2-fw" class="diode scale-75"></div>
+                                <span class="absolute -bottom-4 -left-4 text-[10px]">D2</span>
+                            </div>
+                            <!-- D3 (Abajo-Der) Apunta a Salida + -->
+                            <div class="absolute bottom-[25%] right-[25%] transform translate-x-1/2 translate-y-1/2 -rotate-45 z-30">
+                                <div id="d3-fw" class="diode scale-75"></div>
+                                <span class="absolute -bottom-4 -right-4 text-[10px]">D3</span>
+                            </div>
+                            <!-- D4 (Arriba-Izq) Apunta a Salida - -->
+                            <div class="absolute top-[25%] left-[25%] transform -translate-x-1/2 -translate-y-1/2 -rotate-45 z-30">
+                                <div id="d4-fw" class="diode scale-75"></div>
+                                <span class="absolute -top-4 -left-4 text-[10px]">D4</span>
+                            </div>
+                        </div>
+                        
+                        <!-- Conexiones del puente al resto del circuito (onda completa) -->
+                        <!-- AC Top al nodo izquierdo del puente -->
+                        <div class="wire fw-only node-ac-top top-[35%] left-[50%] w-[4px] h-[15%] transform -translate-x-1/2"></div>
+                        <!-- AC Bot al nodo superior del puente (cruzando) -->
+                        <div class="wire fw-only node-ac-bot top-[50%] left-[33%] w-[17%] h-[4px]"></div>
+                        <div class="wire fw-only node-ac-bot top-[50%] left-[50%] w-[4px] h-[15%] transform -translate-x-1/2"></div>
+                        
+                        <!-- Nota técnica visual: para no complicar el render de HTML en 2D, simplificaremos 
+                             las conexiones del puente hacia la carga visualmente -->
+                             
+                        <!-- Salida DC+ (Nodo derecho del puente) hacia Carga -->
+                        <div class="wire fw-only node-dc-pos top-[50%] left-[50%] w-[25%] h-[4px] ml-[60px]"></div>
+                        <div class="wire fw-only node-dc-pos top-[35%] right-[20%] w-[4px] h-[15%]"></div>
+                        <div class="wire fw-only node-dc-pos top-[35%] left-[50%] w-[30%] h-[4px] ml-[60px]"></div>
+                        <div class="wire fw-only node-dc-pos top-[35%] left-[50%] w-[4px] h-[15%] ml-[60px]"></div>
+
+                        <!-- Resistencia de Carga (Onda Completa - misma posición que HW pero se gestiona diferente para animar) -->
+                        <div class="component fw-only right-[20%] top-[50%] transform -translate-x-1/2 -translate-y-1/2">
+                            <div class="resistor z-10"></div>
+                            <span class="absolute left-6 text-xs whitespace-nowrap">RL (Carga)</span>
+                        </div>
+
+                        <!-- Salida DC- (Nodo inferior del puente) retorno desde Carga -->
+                        <div class="wire fw-only node-dc-neg top-[65%] right-[20%] w-[4px] h-[25%]"></div>
+                        <div class="wire fw-only node-dc-neg top-[90%] left-[50%] w-[30%] h-[4px]"></div>
+                        <div class="wire fw-only node-dc-neg top-[50%] left-[50%] w-[4px] h-[40%] mt-[60px]"></div>
+                        
+                        <!-- Contenedor para dibujar electrones dinámicamente -->
+                        <div id="particle-container" class="absolute inset-0 pointer-events-none overflow-hidden"></div>
+                    </div>
+                </div>
+
+                <!-- Leyenda de colores -->
+                <div class="mt-4 flex gap-4 text-xs tech-font justify-center">
+                    <div class="flex items-center"><span class="w-3 h-3 bg-orange-400 rounded-full mr-2 shadow-[0_0_5px_#fb923c]"></span> Tensión Positiva (+)</div>
+                    <div class="flex items-center"><span class="w-3 h-3 bg-sky-400 rounded-full mr-2 shadow-[0_0_5px_#38bdf8]"></span> Tensión Negativa (-)</div>
+                    <div class="flex items-center"><span class="w-3 h-3 bg-slate-500 rounded-full mr-2"></span> Neutro / Cero</div>
+                </div>
+            </div>
+
+            <!-- Panel de Explicación/Análisis -->
+            <div class="panel-container rounded-xl p-4 flex-grow">
+                <h3 class="text-lg font-bold text-white mb-2 flex items-center">
+                    <svg class="w-5 h-5 mr-2 accent-blue" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                    ANÁLISIS DEL FUNCIONAMIENTO
+                </h3>
+                <div id="info-hw" class="text-slate-300 text-sm space-y-2">
+                    <p>El <strong class="text-white">Rectificador de Media Onda</strong> utiliza un solo diodo (D1) para convertir corriente alterna (CA) en corriente continua (CC) pulsante.</p>
+                    <ul class="list-disc pl-5 space-y-1 mt-2">
+                        <li><strong>Semiciclo Positivo:</strong> El ánodo de D1 es positivo respecto al cátodo. D1 conduce (polarización directa), permitiendo que la corriente fluya a través de la carga (RL).</li>
+                        <li><strong>Semiciclo Negativo:</strong> El ánodo es negativo respecto al cátodo. D1 se bloquea (polarización inversa). No hay flujo de corriente, y la tensión en la carga es cero.</li>
+                    </ul>
+                    <p class="mt-2 text-xs text-slate-400 italic">Resultado: Solo se aprovecha la mitad de la energía de entrada. La onda de salida tiene un "hueco" durante el semiciclo negativo.</p>
+                </div>
+                
+                <div id="info-fw" class="text-slate-300 text-sm space-y-2 hidden">
+                    <p>El <strong class="text-white">Rectificador de Onda Completa (Puente)</strong> utiliza cuatro diodos para convertir toda la señal de entrada en CC pulsante, invirtiendo el semiciclo negativo.</p>
+                    <ul class="list-disc pl-5 space-y-1 mt-2">
+                        <li><strong>Semiciclo Positivo (AC Top es +):</strong> La corriente fluye a través de <span class="accent-green font-bold">D1</span>, pasa por la carga (RL) de arriba hacia abajo, y retorna a través de <span class="accent-green font-bold">D2</span> hacia la fuente.</li>
+                        <li><strong>Semiciclo Negativo (AC Bot es +):</strong> La corriente fluye a través de <span class="accent-orange font-bold">D3</span>, pasa por la carga (RL) <em>en la misma dirección</em> (arriba hacia abajo), y retorna a través de <span class="accent-orange font-bold">D4</span>.</li>
+                    </ul>
+                    <p class="mt-2 text-xs text-slate-400 italic">Resultado: La corriente siempre fluye en la misma dirección por la carga. Se aprovecha toda la energía. La señal es más estable y fácil de filtrar.</p>
+                </div>
+            </div>
+
+        </div>
+
+        <div class="lg:col-span-5 flex flex-col gap-4">
+            <h3 class="text-lg font-bold text-white mb-2 flex items-center border-b border-slate-700 pb-2">
+                <svg class="w-5 h-5 mr-2 accent-green" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z"></path></svg>
+                FORMAS DE ONDA EN CADA PASO
+            </h3>
+            
+            <!-- Osciloscopio 1: Entrada -->
+            <div class="panel-container rounded-lg p-3">
+                <div class="flex justify-between items-center mb-1">
+                    <span class="text-xs font-bold text-slate-300 tech-font">1. TENSIÓN DE ENTRADA (CA)</span>
+                    <span class="text-[10px] text-slate-500">V (Volts) / t (Tiempo)</span>
+                </div>
+                <div class="relative w-full h-24">
+                    <canvas id="canvas-input" class="w-full h-full"></canvas>
+                    <div class="absolute top-1/2 left-0 w-full border-t border-slate-600 border-dashed opacity-50"></div> <!-- Línea 0V -->
+                    <span class="absolute top-1/2 left-1 transform -translate-y-1/2 text-[10px] text-slate-500">0</span>
+                </div>
+            </div>
+
+            <!-- Osciloscopio 2: Diodos -->
+            <div class="panel-container rounded-lg p-3">
+                <div class="flex justify-between items-center mb-1">
+                    <span id="label-osc-diodo" class="text-xs font-bold text-slate-300 tech-font">2. TENSIÓN EN EL DIODO (D1)</span>
+                </div>
+                <div class="relative w-full h-24">
+                    <canvas id="canvas-diode" class="w-full h-full"></canvas>
+                    <div class="absolute top-1/2 left-0 w-full border-t border-slate-600 border-dashed opacity-50"></div> <!-- Línea 0V -->
+                    <span class="absolute top-1/2 left-1 transform -translate-y-1/2 text-[10px] text-slate-500">0</span>
+                </div>
+            </div>
+
+            <!-- Osciloscopio 3: Salida Carga -->
+            <div class="panel-container rounded-lg p-3 relative overflow-hidden">
+                <div class="absolute bottom-0 right-0 w-32 h-32 bg-green-500 rounded-full filter blur-[80px] opacity-20"></div>
+                
+                <div class="flex justify-between items-center mb-1 relative z-10">
+                    <span class="text-xs font-bold text-slate-300 tech-font">3. TENSIÓN EN LA CARGA (SALIDA DC)</span>
+                    <div class="flex items-center gap-2">
+                        <span class="text-[10px] text-accent-green">V_media: <span id="v-avg-val">0.00</span>V</span>
+                    </div>
+                </div>
+                <div class="relative w-full h-32 z-10">
+                    <canvas id="canvas-output" class="w-full h-full"></canvas>
+                    <div class="absolute top-1/2 left-0 w-full border-t border-slate-600 border-dashed opacity-50"></div> <!-- Línea 0V -->
+                    <span class="absolute top-1/2 left-1 transform -translate-y-1/2 text-[10px] text-slate-500">0</span>
+                </div>
+            </div>
+            
+            <!-- Herramientas de Medición Simbólicas -->
+            <div class="grid grid-cols-2 gap-2 mt-2">
+                <div class="panel-container p-2 rounded flex items-center justify-between">
+                    <span class="text-[10px] text-slate-400 uppercase">Frecuencia In</span>
+                    <span class="tech-font text-sm text-white">60 Hz</span>
+                </div>
+                <div class="panel-container p-2 rounded flex items-center justify-between">
+                    <span class="text-[10px] text-slate-400 uppercase">Ripple (Rizado)</span>
+                    <span id="ripple-val" class="tech-font text-sm text-orange-400">Alto</span>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        // --- Variables de Estado y Configuración ---
+        let isPowerOn = true;
+        let mode = 'hw'; // 'hw' (Half Wave) o 'fw' (Full Wave)
+        let time = 0;
+        let animationId;
+        
+        // Parámetros de la simulación
+        const amplitude = 1; // Amplitud base normalizada (-1 a 1)
+        const frequency = 0.05; // Velocidad base de la onda (tiempo en ms)
+        let speedMultiplier = 1;
+        const forwardVoltageDrop = 0.1; // Caída de tensión idealizada del diodo (0.7V en la vida real, ajustado para visualización)
+
+        // Configuración de Canvas
+        const canvases = {
+            input: document.getElementById('canvas-input'),
+            diode: document.getElementById('canvas-diode'),
+            output: document.getElementById('canvas-output')
+        };
+        const ctxs = {
+            input: canvases.input.getContext('2d'),
+            diode: canvases.diode.getContext('2d'),
+            output: canvases.output.getContext('2d')
+        };
+
+        // Historial de datos para dibujar ondas (almacenamos últimos N puntos)
+        const historyLength = 200; // Número de puntos horizontales
+        const data = {
+            input: new Array(historyLength).fill(0),
+            diode: new Array(historyLength).fill(0),
+            output: new Array(historyLength).fill(0)
+        };
+
+        // --- Funciones de Utilidad ---
+        
+        function resizeCanvases() {
+            // Ajustar resolución interna de canvas al tamaño CSS
+            for (let key in canvases) {
+                const canvas = canvases[key];
+                const rect = canvas.parentElement.getBoundingClientRect();
+                canvas.width = rect.width;
+                canvas.height = rect.height;
+            }
+        }
+
+        // --- Lógica Principal de Simulación ---
+
+        // Calcula el valor de voltaje en un instante dado (t)
+        function calculateVoltage(t) {
+            if (!isPowerOn) return 0;
+            return amplitude * Math.sin(t * frequency);
+        }
+
+        function updateSimulation() {
+            if (!isPowerOn) {
+                // Decay lento hacia cero si se apaga
+                data.input.shift(); data.input.push(data.input[data.input.length-1] * 0.95);
+                data.diode.shift(); data.diode.push(data.diode[data.diode.length-1] * 0.95);
+                data.output.shift(); data.output.push(data.output[data.output.length-1] * 0.95);
+                updateVisuals(0); // Forzar actualización visual a neutro
+                return;
+            }
+
+            // Incrementar tiempo basado en slider
+            speedMultiplier = parseFloat(document.getElementById('speed-slider').value);
+            time += speedMultiplier;
+
+            // 1. Calcular Voltaje de Entrada
+            const vIn = calculateVoltage(time);
+            
+            let vDiode = 0;
+            let vOut = 0;
+            let currentFlowing = false; // Indica si fluye corriente hacia la carga
+            let polarity = vIn >= 0 ? 1 : -1; // 1 = Semiciclo positivo, -1 = Negativo
+
+            // 2. Lógica del Circuito según el Modo
+            if (mode === 'hw') {
+                // Media Onda
+                if (vIn > forwardVoltageDrop) {
+                    // Diodo conduce
+                    vOut = vIn - forwardVoltageDrop;
+                    vDiode = forwardVoltageDrop; // Caída en el diodo
+                    currentFlowing = true;
+                } else {
+                    // Diodo bloquea
+                    vOut = 0;
+                    vDiode = vIn; // Toda la tensión cae en el diodo abierto
+                    currentFlowing = false;
+                }
+            } else if (mode === 'fw') {
+                // Onda Completa (Puente)
+                if (Math.abs(vIn) > 2 * forwardVoltageDrop) { // Necesita superar 2 diodos (1.4V aprox)
+                    // Conduce
+                    vOut = Math.abs(vIn) - (2 * forwardVoltageDrop); // Rectificación total menos caída
+                    vDiode = forwardVoltageDrop; // Tensión en diodos conduciendo
+                    currentFlowing = true;
+                } else {
+                    // Cerca de cero (zona muerta)
+                    vOut = 0;
+                    vDiode = 0;
+                    currentFlowing = false;
+                }
+            }
+
+            // Actualizar arrays de datos desplazando a la izquierda (shift) y añadiendo nuevo valor al final (push)
+            data.input.shift(); data.input.push(vIn);
+            data.diode.shift(); data.diode.push(vDiode);
+            data.output.shift(); data.output.push(vOut);
+
+            // 3. Actualizar Visuales (Diagrama, Diodos, Colores de cables)
+            updateVisuals(vIn, currentFlowing, polarity);
+            
+            // 4. Actualizar métricas de texto
+            updateMetrics();
+        }
+
+        function updateVisuals(vIn, currentFlowing, polarity) {
+            // Colorear Cables y Diodos según el modo y estado
+            const container = document.getElementById('circuit-view');
+            
+            if (!isPowerOn) {
+                // Limpiar todo
+                clearWireColors();
+                clearDiodes();
+                return;
+            }
+
+            // Limpiar estados previos antes de aplicar nuevos
+            clearWireColors();
+            clearDiodes();
+
+            if (mode === 'hw') {
+                // --- Visuales MEDIA ONDA ---
+                const d1 = document.getElementById('d1-hw');
+                
+                if (polarity > 0 && currentFlowing) {
+                    // Semiciclo positivo conduciendo
+                    colorWires('.node-a', 'pos');
+                    colorWires('.node-post-d1', 'pos');
+                    colorWires('.node-return', 'neg');
+                    d1.classList.add('conducting');
+                } else if (polarity < 0) {
+                    // Semiciclo negativo bloqueando
+                    colorWires('.node-a', 'neg'); // Cable antes del diodo se vuelve negativo
+                    colorWires('.node-post-d1', 'neutral'); // Sin tensión tras el diodo
+                    colorWires('.node-return', 'pos'); // Retorno se vuelve positivo (relativo)
+                    d1.classList.add('blocking');
+                } else {
+                     // Cerca de cero
+                     d1.classList.remove('conducting', 'blocking');
+                }
+
+            } else if (mode === 'fw') {
+                // --- Visuales ONDA COMPLETA ---
+                const d1 = document.getElementById('d1-fw'); // Arriba-Der
+                const d2 = document.getElementById('d2-fw'); // Abajo-Izq
+                const d3 = document.getElementById('d3-fw'); // Abajo-Der
+                const d4 = document.getElementById('d4-fw'); // Arriba-Izq
+                
+                if (polarity > 0 && currentFlowing) {
+                    // Semiciclo positivo: AC Top es (+), AC Bot es (-)
+                    colorWires('.node-ac-top', 'pos');
+                    colorWires('.node-ac-bot', 'neg');
+                    
+                    // Diodos conduciendo: D1 y D2
+                    d1.classList.add('conducting');
+                    d2.classList.add('conducting');
+                    // Diodos bloqueando: D3 y D4
+                    d3.classList.add('blocking');
+                    d4.classList.add('blocking');
+                    
+                    // Salida a carga
+                    colorWires('.node-dc-pos', 'pos');
+                    colorWires('.node-dc-neg', 'neg');
+                    
+                } else if (polarity < 0 && currentFlowing) {
+                    // Semiciclo negativo: AC Bot es (+), AC Top es (-)
+                    colorWires('.node-ac-bot', 'pos');
+                    colorWires('.node-ac-top', 'neg');
+                    
+                    // Diodos conduciendo: D3 y D4
+                    d3.classList.add('conducting');
+                    d4.classList.add('conducting');
+                    // Diodos bloqueando: D1 y D2
+                    d1.classList.add('blocking');
+                    d2.classList.add('blocking');
+                    
+                    // Salida a carga (IGUAL, rectificado)
+                    colorWires('.node-dc-pos', 'pos');
+                    colorWires('.node-dc-neg', 'neg');
+                }
+            }
+            
+            // Generar "electrones" (partículas) si hay corriente
+            if (currentFlowing) {
+                // Solo generamos partículas ocasionalmente para no saturar
+                if (Math.random() < 0.3 * speedMultiplier) {
+                    createParticle(polarity);
+                }
+            }
+        }
+
+        // Funciones auxiliares para visuales
+        function colorWires(selector, type) {
+            const elements = document.querySelectorAll(`.mode-${mode} ${selector}`);
+            elements.forEach(el => {
+                if(type === 'pos') el.classList.add('active-pos');
+                else if(type === 'neg') el.classList.add('active-neg');
+            });
+        }
+
+        function clearWireColors() {
+            document.querySelectorAll('.wire').forEach(el => {
+                el.classList.remove('active-pos', 'active-neg');
+            });
+        }
+        
+        function clearDiodes() {
+            document.querySelectorAll('.diode').forEach(el => {
+                el.classList.remove('conducting', 'blocking');
+            });
+        }
+
+        function drawGraphs() {
+            for (let key in canvases) {
+                const canvas = canvases[key];
+                const ctx = ctxs[key];
+                const w = canvas.width;
+                const h = canvas.height;
+                
+                // Limpiar
+                ctx.clearRect(0, 0, w, h);
+                
+                // Dibujar Ejes (estilo osciloscopio)
+                ctx.strokeStyle = 'rgba(100, 116, 139, 0.2)'; // grid color
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                // Grid horizontal
+                for(let i=1; i<4; i++) {
+                    let y = i * (h/4);
+                    ctx.moveTo(0, y); ctx.lineTo(w, y);
+                }
+                // Grid vertical
+                for(let i=1; i<10; i++) {
+                    let x = i * (w/10);
+                    ctx.moveTo(x, 0); ctx.lineTo(x, h);
+                }
+                ctx.stroke();
+
+                // Dibujar línea base (0V)
+                const centerY = h / 2;
+
+                // Configurar estilo de línea según el gráfico
+                ctx.beginPath();
+                if (key === 'input') {
+                    ctx.strokeStyle = '#eab308'; // Amarillo para entrada AC
+                    ctx.lineWidth = 2;
+                } else if (key === 'diode') {
+                    ctx.strokeStyle = '#4ade80'; // Verde para diodo
+                    ctx.lineWidth = 2;
+                } else if (key === 'output') {
+                    ctx.strokeStyle = '#38bdf8'; // Azul/Cyan para salida DC
+                    ctx.lineWidth = 3; // Más grueso para destacar
+                    
+                    // Sombra/Glow para la salida
+                    ctx.shadowBlur = 10;
+                    ctx.shadowColor = '#38bdf8';
+                }
+
+                // Trazar los puntos
+                const dataset = data[key];
+                const stepX = w / (historyLength - 1);
+                
+                for (let i = 0; i < historyLength; i++) {
+                    const x = i * stepX;
+                    // Escalar el valor (-1 a 1) a la altura del canvas.
+                    // Multiplicamos por 0.8 para dejar un margen arriba y abajo
+                    const val = dataset[i];
+                    const scaledY = centerY - (val * centerY * 0.8);
+                    
+                    if (i === 0) ctx.moveTo(x, scaledY);
+                    else ctx.lineTo(x, scaledY);
+                }
+                
+                ctx.stroke();
+                
+                // Reset shadow
+                ctx.shadowBlur = 0;
+            }
+        }
+
+        function updateMetrics() {
+            // Calcular voltaje medio (DC) de la salida en la ventana actual
+            const sum = data.output.reduce((a, b) => a + b, 0);
+            let avg = sum / historyLength;
+            
+            // Si está apagado, mostrar 0. Si está encendido, escalar a un valor representativo (ej. pico 10V)
+            const peakVoltage = 10; 
+            const displayAvg = isPowerOn ? (avg * peakVoltage).toFixed(2) : "0.00";
+            
+            document.getElementById('v-avg-val').textContent = displayAvg;
+            
+            // Actualizar etiqueta de Rizado
+            const rippleEl = document.getElementById('ripple-val');
+            if (!isPowerOn) {
+                rippleEl.textContent = "-";
+                rippleEl.className = "tech-font text-sm text-slate-500";
+            } else if (mode === 'hw') {
+                rippleEl.textContent = "ALTO (100%)";
+                rippleEl.className = "tech-font text-sm text-red-400";
+            } else {
+                rippleEl.textContent = "MEDIO (48%)";
+                rippleEl.className = "tech-font text-sm text-orange-400";
+            }
+        }
+
+        function setCircuitMode(newMode) {
+            mode = newMode;
+            
+            // Actualizar UI
+            const container = document.getElementById('circuit-view');
+            container.className = `circuit-view mode-${mode}`;
+            
+            // Actualizar Botones
+            const btnHw = document.getElementById('btn-media-onda');
+            const btnFw = document.getElementById('btn-onda-completa');
+            
+            if (mode === 'hw') {
+                btnHw.className = "px-4 py-2 rounded font-bold text-sm transition-colors bg-green-600 text-white shadow-[0_0_10px_rgba(74,222,128,0.5)]";
+                btnFw.className = "px-4 py-2 rounded font-bold text-sm transition-colors text-slate-300 hover:bg-slate-700";
+                document.getElementById('circuit-title').textContent = "MEDIA ONDA";
+                document.getElementById('label-osc-diodo').textContent = "2. TENSIÓN EN EL DIODO (D1)";
+                
+                document.getElementById('info-hw').classList.remove('hidden');
+                document.getElementById('info-fw').classList.add('hidden');
+            } else {
+                btnFw.className = "px-4 py-2 rounded font-bold text-sm transition-colors bg-green-600 text-white shadow-[0_0_10px_rgba(74,222,128,0.5)]";
+                btnHw.className = "px-4 py-2 rounded font-bold text-sm transition-colors text-slate-300 hover:bg-slate-700";
+                document.getElementById('circuit-title').textContent = "ONDA COMPLETA (PUENTE)";
+                document.getElementById('label-osc-diodo').textContent = "2. TENSIÓN EN LOS DIODOS";
+                
+                document.getElementById('info-fw').classList.remove('hidden');
+                document.getElementById('info-hw').classList.add('hidden');
+            }
+            
+            // Limpiar buffers para evitar artefactos al cambiar
+            data.input.fill(0);
+            data.diode.fill(0);
+            data.output.fill(0);
+        }
+
+        function togglePower() {
+            isPowerOn = document.getElementById('power-switch').checked;
+            const dot = document.getElementById('power-dot');
+            if (isPowerOn) {
+                dot.classList.add('translate-x-4', 'bg-green-400', 'shadow-[0_0_5px_#4ade80]');
+                dot.classList.remove('translate-x-0', 'bg-slate-400');
+            } else {
+                dot.classList.remove('translate-x-4', 'bg-green-400', 'shadow-[0_0_5px_#4ade80]');
+                dot.classList.add('translate-x-0', 'bg-slate-400');
+            }
+        }
+
+        // Funciones Simplificadas para Partículas (para dar sensación de flujo)
+        // No implementadas completamente aquí para mantener el código conciso y enfocado,
+        // pero se deja la estructura por si se desea expandir.
+        function createParticle(polarity) {
+            // Lógica compleja de rutas omitida. 
+            // La animación de los colores de los cables (wire.active-pos/neg) 
+            // ya proporciona una excelente visualización del flujo.
+        }
+
+        // Bucle de Animación
+        function loop() {
+            updateSimulation();
+            drawGraphs();
+            animationId = requestAnimationFrame(loop);
+        }
+
+        // Inicialización
+        window.onload = () => {
+            resizeCanvases();
+            window.addEventListener('resize', resizeCanvases);
+            
+            // Iniciar simulador en modo media onda
+            setCircuitMode('hw');
+            
+            // Arrancar loop
+            loop();
+        };
+
+    </script>
+</body>
+</html>
